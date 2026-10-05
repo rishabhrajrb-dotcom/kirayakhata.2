@@ -39,6 +39,7 @@ export async function handleCloseMonth({ body, visitorId, store, limiter, now = 
     treatment: result.gst.treatment, gstStatus: result.gst.status, tdsStatus: result.tds.status, arithmetic: result.arithmetic,
     rentPaise: input.rentPaise, differencePaise: result.differencePaise, ms: Date.now() - t0, rulesetVersion: RULESET_VERSION,
     notePresent: Boolean(note), noteLength: note.length, modelUsed: model.used, modelFallback: model.used ? null : model.reason,
+    modelName: model.model || null,
     modelTokens: model.tokens ? { in: model.tokens.promptTokenCount, out: model.tokens.candidatesTokenCount } : null,
   });
   return { status: 200, json: { result, explanation, remaining: limit.remaining, label: 'Local prototype check', rulesetVersion: RULESET_VERSION } };
