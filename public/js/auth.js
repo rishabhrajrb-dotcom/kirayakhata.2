@@ -22,7 +22,27 @@ async function authFetch(path, body) {
 
 /** Step 1: email a 6-digit code (Supabase "Email OTP"). */
 export async function requestCode(email) {
-  return authFetch('otp', { email, create_user: true });
+  // Works with either email template: a 6-digit code ({{ .Token }}) or a magic link back to /app.
+  return authFetch(`otp?redirect_to=${encodeURIComponent(`${location.origin}/app`)}`, { email, create_user: true });
+}
+
+/** Picks up a session returned in the URL fragment (magic link / Google login), then clears it. */
+export function consumeHashSession() {
+  if (!location.hash.includes('access_token=')) return null;
+  const p = new URLSearchParams(location.hash.replace(/^#/, ''));
+  history.replaceState(null, '', location.pathname + location.search);
+  const token = p.get('access_token');
+  if (!token) return null;
+  let email = '';
+  try { email = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).email || ''; } catch { /* ignore */ }
+  const s = { access_token: token, refresh_token: p.get('refresh_token'), expires_at: Date.now() + Number(p.get('expires_in') || 3600) * 1000, email };
+  writeSession(s);
+  return s;
+}
+
+export function googleLoginUrl() {
+  const c = cfgCache || {};
+  return `${c.supabaseUrl}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(`${location.origin}/app`)}`;
 }
 
 /** Step 2: verify the code and keep the session on this device. */

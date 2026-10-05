@@ -14,7 +14,9 @@ export async function handleConfig() {
       supabaseAnonKey: c.url && c.anonKey ? c.anonKey : null,
       // Turn on after configuring the Google provider (gmail.send scope) in Supabase.
       gmailSendEnabled: Boolean(c.url && c.anonKey && process.env.GMAIL_SEND_ENABLED === '1'),
-      authEnabled: c.configured,
+      // Sign-in only needs the public URL + key (the browser talks to Supabase Auth directly).
+      authEnabled: Boolean(c.url && c.anonKey),
+      googleLoginEnabled: Boolean(c.url && c.anonKey && process.env.GOOGLE_LOGIN_ENABLED === '1'),
       emailEnabled: c.configured && emailConfigured(),
       aiDraftEnabled: c.configured && geminiConfigured(),
     },

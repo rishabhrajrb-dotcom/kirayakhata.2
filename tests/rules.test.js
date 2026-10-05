@@ -215,18 +215,31 @@ test('close month: unknown GST cannot compute; RCM excluded from receipt', () =>
   assert.equal(rcm.expectedReceiptPaise, 90_000_00);
 });
 
-test('GST registration check: threshold, exemptions, special states', () => {
-  const L = (o) => ({ kind: 'commercial', use: 'business', tenantRegistered: false, annualPaise: 12_00_000_00, stateCode: '19', ...o });
-  const below = checkRegistration({ landlordStateCode: '19', rentals: [L({ annualPaise: 12_00_000_00 })] });
+test('GST registration check: conservative verdicts with conditions', () => {
+  const L = (o) => ({ kind: 'commercial', use: 'business', tenantStatus: 'unregistered', annualPaise: 12_00_000_00, stateCode: '19', ...o });
+  const base = { landlordStateCode: '19', alreadyRegistered: false };
+  const below = checkRegistration({ ...base, rentals: [L()] });
   assert.equal(below.verdict, 'NOT_REQUIRED'); assert.equal(below.headroomPaise, 8_00_000_00); assert.equal(below.usedPct, 60);
-  assert.equal(checkRegistration({ landlordStateCode: '19', rentals: [L({ annualPaise: 18_00_000_00 })] }).code, 'REG_BELOW_NEAR');
-  const req = checkRegistration({ landlordStateCode: '19', rentals: [L({ annualPaise: 15_00_000_00 }), L({ kind: 'residential_dwelling', use: 'residence', annualPaise: 6_00_000_00 })] });
-  assert.equal(req.verdict, 'REQUIRED'); assert.equal(req.aggregatePaise, 21_00_000_00);
-  assert.equal(checkRegistration({ landlordStateCode: '19', rentals: [L({ kind: 'residential_dwelling', use: 'residence', annualPaise: 30_00_000_00 })] }).code, 'REG_ONLY_EXEMPT');
-  assert.equal(checkRegistration({ landlordStateCode: '19', rentals: [L({ tenantRegistered: true, annualPaise: 30_00_000_00 })] }).code, 'REG_ONLY_RCM');
-  assert.equal(checkRegistration({ landlordStateCode: '19', rentals: [L({ tenantRegistered: true, annualPaise: 15_00_000_00 }), L({ kind: 'residential_dwelling', use: 'residence', annualPaise: 10_00_000_00 })] }).verdict, 'REVIEW');
-  const tripura = checkRegistration({ landlordStateCode: '16', rentals: [L({ stateCode: '16', annualPaise: 12_00_000_00 })] });
+  assert.equal(checkRegistration({ ...base, rentals: [L({ annualPaise: 18_00_000_00 })] }).code, 'REG_BELOW_NEAR');
+  assert.equal(checkRegistration({ ...base, rentals: [L({ annualPaise: 20_00_000_00 })] }).verdict, 'NOT_REQUIRED', 'exactly 20 lakh does not exceed');
+  // Over 20L with any forward-charge rent -> must register.
+  const req = checkRegistration({ ...base, rentals: [L({ annualPaise: 15_00_000_00 }), L({ kind: 'residential_dwelling', use: 'residence', annualPaise: 6_00_000_00 })] });
+  assert.equal(req.verdict, 'REQUIRED'); assert.equal(req.aggregatePaise, 21_00_000_00); assert.equal(req.crossMonthIndex, 12);
+  // User's scenario: > 20L, all tenants regular-registered (RCM) -> CONDITIONAL, never a plain "not required".
+  const rcm = checkRegistration({ ...base, rentals: [L({ tenantStatus: 'regular', annualPaise: 30_00_000_00 })] });
+  assert.equal(rcm.verdict, 'CONDITIONAL'); assert.equal(rcm.code, 'REG_ONLY_RCM'); assert.ok(rcm.conditions.includes('COND_STAY_UNREGISTERED'));
+  // Same but one composition tenant (excluded from RCM since 16 Jan 2025) -> REQUIRED.
+  assert.equal(checkRegistration({ ...base, rentals: [L({ tenantStatus: 'regular', annualPaise: 25_00_000_00 }), L({ tenantStatus: 'composition', annualPaise: 1_00_000_00 })] }).verdict, 'REQUIRED');
+  // Taxable other income breaks the RCM-only exemption.
+  assert.equal(checkRegistration({ ...base, rentals: [L({ tenantStatus: 'regular', annualPaise: 25_00_000_00 })], otherTurnoverPaise: 1_00_000_00, otherTurnoverTaxable: true }).verdict, 'REQUIRED');
+  assert.equal(checkRegistration({ ...base, rentals: [L({ kind: 'residential_dwelling', use: 'residence', annualPaise: 30_00_000_00 })] }).code, 'REG_ONLY_EXEMPT');
+  assert.equal(checkRegistration({ ...base, rentals: [L({ tenantStatus: 'regular', annualPaise: 15_00_000_00 }), L({ kind: 'residential_dwelling', use: 'residence', annualPaise: 10_00_000_00 })] }).verdict, 'REVIEW');
+  // Before 10 Oct 2024 commercial rent to a registered tenant was the landlord's own taxable supply.
+  assert.equal(checkRegistration({ ...base, date: '2024-06-01', rentals: [L({ tenantStatus: 'regular', annualPaise: 25_00_000_00 })] }).verdict, 'REQUIRED');
+  const tripura = checkRegistration({ ...base, landlordStateCode: '16', rentals: [L({ stateCode: '16' })] });
   assert.equal(tripura.thresholdPaise, 10_00_000_00); assert.equal(tripura.verdict, 'REQUIRED');
-  assert.equal(checkRegistration({ landlordStateCode: '19', rentals: [L({ tenantRegistered: null })] }).verdict, 'NEEDS_MORE_INFORMATION');
-  assert.equal(checkRegistration({ landlordStateCode: '19', rentals: [L({ tenantRegistered: true, tenantComposition: true, annualPaise: 25_00_000_00 })] }).verdict, 'REQUIRED');
+  assert.equal(checkRegistration({ ...base, rentals: [L({ tenantStatus: 'unknown' })] }).verdict, 'NEEDS_MORE_INFORMATION');
+  assert.equal(checkRegistration({ landlordStateCode: '19', alreadyRegistered: null, rentals: [L()] }).verdict, 'NEEDS_MORE_INFORMATION');
+  assert.equal(checkRegistration({ landlordStateCode: '19', alreadyRegistered: true, rentals: [L()] }).verdict, 'ALREADY_REGISTERED');
+  assert.ok(checkRegistration({ ...base, rentals: [L({ tenantStatus: 'regular', tenantStateDiffers: true, annualPaise: 25_00_000_00 })] }).reviewNotes.includes('RCM_TENANT_OTHER_STATE'));
 });

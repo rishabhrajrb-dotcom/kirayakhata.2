@@ -40,7 +40,7 @@ export function sampleWorkspace(now = '2026-10-05T00:00:00.000Z') {
   const supplier = {
     id: 'sup_demo', legalName: 'Suresh K. Mehta (demo)', tradeName: '', address: '12 Example Lane, Ballygunge, Kolkata 700019',
     stateCode: '19', gstRegType: 'regular', gstin: g('19ABCPM1234F1Z'), email: 'owner@example.invalid', phone: '',
-    signatoryName: 'Suresh K. Mehta', signatoryDesignation: 'Proprietor', resident: true, panAvailable: true,
+    signatoryName: 'Suresh K. Mehta', signatoryDesignation: 'Proprietor', aato: 'upto5cr', resident: true, panAvailable: true,
     bank: { holder: 'Suresh K. Mehta', bankName: 'Example Bank (demo)', account: '000011112222', ifsc: 'EXMP0001234', branch: 'Ballygunge', upi: '' },
     series: { prefix: 'SKM', counters: {} }, createdAt: now,
   };

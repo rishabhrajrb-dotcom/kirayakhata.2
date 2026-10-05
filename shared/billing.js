@@ -5,6 +5,7 @@ import { amountOn, changeDatesWithin } from './escalation.js';
 import { mulDiv, sum } from './money.js';
 import { classifyRentGst, classifyItemGst, expectedRentTds, validateGSTIN, worstStatus, SUPPORTED, NEEDS_MORE_INFORMATION, NEEDS_SPECIALIST_REVIEW } from './rules.js';
 import { RULESET_VERSION, GST_RULES } from './compliance-config.js';
+import { complianceChecklist, blockersFrom } from './invoice-rules.js';
 
 export const CATEGORIES = ['rent', 'maintenance', 'dg', 'combined'];
 export const CATEGORY_TITLES = { rent: 'Lease Rent', maintenance: 'Maintenance Charges', dg: 'DG / Generator Charges', combined: 'Rent and Maintenance' };
@@ -82,7 +83,7 @@ export function computePeriodCharges({ agreement, versions, period, inputs = {},
       });
     }
   };
-  fixedLine('rent', 'Lease rent');
+  fixedLine('rent', 'Renting of immovable property (lease rent)');
 
   for (const key of ['maintenance', 'dg']) {
     const c = startVersion.terms[key];
@@ -202,25 +203,9 @@ export function buildDocuments(ctx) {
   });
 }
 
-/** Essential-field and rule blockers for issuing a draft as a final local document. */
-export function issuanceBlockers(doc, snapshot) {
-  const b = [];
-  const s = snapshot.supplier || {};
-  const t = snapshot.tenant || {};
-  if (!s.legalName) b.push('SUPPLIER_NAME');
-  if (!s.address) b.push('SUPPLIER_ADDRESS');
-  if (!t.legalName) b.push('TENANT_NAME');
-  if (!t.billingAddress) b.push('TENANT_ADDRESS');
-  if (doc.taxStatus === NEEDS_MORE_INFORMATION) b.push('TAX_NEEDS_INFORMATION');
-  if (doc.taxStatus === NEEDS_SPECIALIST_REVIEW) b.push('TAX_NEEDS_REVIEW');
-  if (doc.documentType === 'UNDETERMINED') b.push('DOCUMENT_TYPE_UNDETERMINED');
-  if (['TAX_INVOICE', 'TAX_INVOICE_RCM', 'BILL_OF_SUPPLY'].includes(doc.documentType)) {
-    if (!validateGSTIN(s.gstin).valid) b.push('SUPPLIER_GSTIN');
-    if (['regular', 'composition'].includes(t.gstStatus) && !validateGSTIN(t.gstin).valid) b.push('TENANT_GSTIN');
-    for (const l of doc.lines) if (!l.tax.sac) { b.push('SAC_MISSING'); break; }
-  }
-  if (doc.totalPaise <= 0 && !doc.lines.some((l) => l.adjustment)) b.push('ZERO_VALUE');
-  return b;
+/** Blocking items from the GST compliance checklist (Rule 46/49 etc.). Returns item ids. */
+export function issuanceBlockers(doc, snapshot, opts = {}) {
+  return blockersFrom(complianceChecklist(doc, snapshot, opts));
 }
 
 /** Rule 46: up to 16 chars, alphanumeric plus '-' and '/', unique per financial year. */

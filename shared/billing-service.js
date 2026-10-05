@@ -62,7 +62,7 @@ async function fyRentBefore(repo, agreementId, period) {
 function snapshotParties({ supplier, tenant, property, agreement, version }) {
   const unit = (property.units || []).find((u) => u.id === agreement.unitId);
   return {
-    supplier: { id: supplier.id, legalName: supplier.legalName, tradeName: supplier.tradeName, address: supplier.address, stateCode: supplier.stateCode, gstRegType: supplier.gstRegType, gstin: supplier.gstin, email: supplier.email, phone: supplier.phone, signatoryName: supplier.signatoryName, signatoryDesignation: supplier.signatoryDesignation, bank: supplier.bank ? { ...supplier.bank } : null },
+    supplier: { id: supplier.id, legalName: supplier.legalName, tradeName: supplier.tradeName, aato: supplier.aato || null, pan: supplier.pan || '', address: supplier.address, stateCode: supplier.stateCode, gstRegType: supplier.gstRegType, gstin: supplier.gstin, email: supplier.email, phone: supplier.phone, signatoryName: supplier.signatoryName, signatoryDesignation: supplier.signatoryDesignation, bank: supplier.bank ? { ...supplier.bank } : null },
     tenant: { id: tenant.id, legalName: tenant.legalName, billingAddress: tenant.billingAddress, stateCode: tenant.stateCode, gstStatus: tenant.gstStatus, gstin: tenant.gstin, contactName: tenant.contactName, email: tenant.email },
     property: { id: property.id, name: property.name, address: property.address, stateCode: property.stateCode, unitLabel: unit?.label || '' },
     agreement: { id: agreement.id, reference: agreement.reference || '', versionId: version.id, poNumber: version.terms.poNumber || '' },

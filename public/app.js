@@ -18,6 +18,8 @@ import { buildYearData, ledgerCSV, buildPackZip } from './js/exports.js';
 import { checkRegistration } from '/shared/registration.js';
 import { renderRegistration, regText } from './js/registration-ui.js';
 import { financialYearOf } from '/shared/dates.js';
+import { complianceChecklist, complianceSummary } from '/shared/invoice-rules.js';
+import { validateGSTIN, gstinCheckChar } from '/shared/rules.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -238,6 +240,19 @@ function initDemo() {
   const f = form();
   $('#btn-example').addEventListener('click', () => { openForm({ example: true }); runCheck(EXAMPLE_CLOSE_MONTH, { sample: true }); });
   $('#btn-own').addEventListener('click', () => openForm());
+  const SCEN = {
+    shop: { lgst: 'regular', kind: 'commercial', tgst: 'regular', cat: 'company', rent: '1,00,000', recv: '1,08,000', tds: '10,000' },
+    home: { lgst: 'unregistered', kind: 'residential_dwelling', use: 'residence', tgst: 'unregistered', cat: 'individual_huf_other', rent: '35,000', recv: '35,000', tds: '' },
+    rcm: { lgst: 'unregistered', kind: 'commercial', tgst: 'regular', cat: 'company', rent: '80,000', recv: '72,000', tds: '8,000' },
+    short: { lgst: 'regular', kind: 'commercial', tgst: 'regular', cat: 'firm_llp', rent: '75,000', recv: '80,000', tds: '' },
+  };
+  $$('[data-scenario]').forEach((b) => b.addEventListener('click', () => {
+    const sc = SCEN[b.dataset.scenario]; openForm();
+    const fm = form();
+    fm.lgst.value = sc.lgst; fm.kind.value = sc.kind; fm.tgst.value = sc.tgst; fm.cat.value = sc.cat; if (sc.use) fm.use.value = sc.use;
+    fm.rent.value = sc.rent; fm.recv.value = sc.recv; fm.tds.value = sc.tds;
+    showStep(2); fm.querySelector('[data-submit]').focus();
+  }));
   $$('[data-load-example]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); closeMenu(); $('#demo').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); history.replaceState(null, '', '#demo'); $('#btn-example').click(); }));
   $$('[data-open-own]').forEach((b) => b.addEventListener('click', () => { closeMenu(); $('#demo').scrollIntoView({ behavior: 'smooth' }); openForm(); }));
   $('[data-next]', f).addEventListener('click', () => { if (validateStep(stepIdx)) showStep(stepIdx + 1); });
@@ -272,39 +287,73 @@ async function loadStats() {
 
 // ---------------- Invoice studio ----------------
 let studioDocs = [];
+const demoGstin = (state, pan) => { const f = `${state}${pan}1Z`; return f + gstinCheckChar(f); };
 function studioState() {
   const f = $('#studio-form'); const err = $('#st-error');
   let rent; let maint; let dg;
   try { rent = rupeesToPaise(f.rent.value || '0'); maint = rupeesToPaise(f.maint.value || '0'); dg = rupeesToPaise(f.dgamt.value || '0'); err.hidden = true; } catch { err.textContent = t('badAmount'); err.hidden = false; return null; }
   const period = /^\d{4}-\d{2}$/.test(f.period.value) ? f.period.value : '2026-10';
+  const pstate = f.pstate.value || '19';
+  const kind = f.pkind.value === 'commercial' ? { kind: 'commercial', use: 'business' } : { kind: 'residential_dwelling', use: f.pkind.value === 'home_res' ? 'residence' : 'business' };
   const base = WS.versions.find((v) => v.agreementId === 'agr_lake');
-  const terms = { ...base.terms, documentMode: f.mode.value, templateId: f.tpl.value,
+  const terms = { ...base.terms, documentMode: f.mode.value, templateId: f.tpl.value, property: kind, tenantCategory: f.tcat.value, proprietorOwnResidence: false,
+    billingDay: Math.min(31, Math.max(1, Number(f.billday.value) || 1)), invoiceNotes: f.terms.value.slice(0, 400), poNumber: f.po.value.trim(),
     rent: { basis: 'fixed', amountPaise: rent, escalation: { type: 'none' } },
     maintenance: { ...base.terms.maintenance, amountPaise: maint, escalation: { type: 'none' } },
     dg: f.dg.checked ? { basis: 'fixed', amountPaise: dg, description: 'DG / generator charges', itemTax: null, escalation: { type: 'none' } } : { basis: 'none' } };
   const ag = { ...byId(WS.agreements, 'agr_lake'), startDate: '2017-07-01', endDate: null };
   const version = { ...base, effectiveFrom: '2017-07-01', terms };
-  const supplier = { ...WS.suppliers[0], gstRegType: f.gst.value, gstin: f.gst.value === 'regular' ? WS.suppliers[0].gstin : '' };
+  const reg = f.gst.value === 'regular';
+  const supplier = { ...WS.suppliers[0], legalName: f.sname.value.trim(), tradeName: f.strade.value.trim(), address: f.saddr.value.trim(), stateCode: pstate, gstRegType: f.gst.value,
+    gstin: reg ? f.sgstin.value.trim().toUpperCase() : '', aato: f.aato.value, signatoryName: f.sign.value.trim(), signatoryDesignation: '' };
+  const tReg = f.tgst.value !== 'unregistered';
+  const tenant = { ...byId(WS.tenants, ag.tenantId), legalName: f.tname.value.trim(), billingAddress: f.taddr.value.trim(), stateCode: pstate, gstStatus: f.tgst.value, gstin: tReg ? f.tgstin.value.trim().toUpperCase() : '' };
+  const property = { ...byId(WS.properties, ag.propertyId), name: f.pname.value.trim(), address: f.taddr.value.trim(), stateCode: pstate };
   const charges = computePeriodCharges({ agreement: ag, versions: [version], period });
-  const docs = charges.status === 'READY' ? buildDocuments({ agreement: ag, version, supplier, tenant: byId(WS.tenants, ag.tenantId), property: byId(WS.properties, ag.propertyId), period, charges }) : [];
-  const snap = { ...snapshotFor(ag, f.tpl.value), supplier };
+  const docs = charges.status === 'READY' ? buildDocuments({ agreement: ag, version, supplier, tenant, property, period, charges }) : [];
+  const snap = { supplier, tenant, property: { ...property, unitLabel: f.unit.value.trim() }, agreement: { reference: ag.reference, poNumber: terms.poNumber }, templateId: f.tpl.value };
   return docs.map((doc) => ({ doc, snapshot: snap, draftNumber: `DRAFT-DEMO-${doc.category.slice(0, 1).toUpperCase()}${period.replace('-', '')}`, demo: true, status: 'draft' }));
 }
 
+function renderChecklist(inv) {
+  const box = $('#studio-checklist'); if (!box) return;
+  if (!inv) { box.innerHTML = ''; return; }
+  const items = complianceChecklist(inv.doc, inv.snapshot);
+  const sum = complianceSummary(items);
+  const L = lang();
+  box.innerHTML = `<h3><span>${L === 'hi' ? 'GST बिल जाँच-सूची' : 'GST invoice checklist'} · ${esc(inv.doc.title)}</span>${sum.blocks ? `<span class="chip chip-review">${sum.blocks} ${L === 'hi' ? 'बाकी' : 'to fix'}</span>` : `<span class="chip chip-ok">${L === 'hi' ? 'अनुपालक' : 'Compliant'}</span>`}</h3>
+    <p class="small muted" style="margin:0">${L === 'hi' ? 'CGST नियम 46/49 के अनिवार्य विवरण। लाल = जारी करने से पहले ठीक करें।' : 'Mandatory particulars under CGST Rules 46/49. Red items must be fixed before issuing.'}</p>
+    <ul>${items.map((i) => `<li class="${i.level}"><span class="mark" aria-hidden="true">${i.ok ? '✓' : i.level === 'block' ? '!' : '•'}</span><span>${esc(L === 'hi' ? i.hi : i.en)}<span class="sr-only"> — ${i.ok ? 'ok' : i.level}</span></span><span class="rule">${esc(i.rule)}</span></li>`).join('')}</ul>`;
+}
+
 function renderStudio() {
+  const f = $('#studio-form');
+  f.querySelector('[data-when="regular"]').hidden = f.gst.value !== 'regular';
+  f.querySelector('[data-when-tenant="registered"]').hidden = f.tgst.value === 'unregistered';
   const s = studioState(); if (!s) return;
   studioDocs = s;
   const wrap = $('#studio-previews');
-  if (!s.length) { wrap.innerHTML = `<div class="notice">${esc(t('noDoc'))}</div>`; return; }
+  if (!s.length) { wrap.innerHTML = `<div class="notice">${esc(t('noDoc'))}</div>`; renderChecklist(null); return; }
   wrap.innerHTML = s.map((inv) => `<div class="preview-wrap"><div class="cap"><span><b>${esc(inv.doc.title)}</b> · ${INR(inv.doc.totalPaise)}</span>${inv.doc.taxStatus === SUPPORTED ? `<span class="chip chip-ok">${esc(t('readyDoc'))}</span>` : `<span class="chip chip-review">${esc(t('reviewDoc'))}</span>`}</div><div class="sheet-stack in">${renderInvoiceHTML(inv)}</div></div>`).join('');
+  renderChecklist(s[0]);
   $('[data-dl="rent"]').disabled = !s.some((i) => i.doc.category === 'rent' || i.doc.category === 'combined');
   $('[data-dl="maintenance"]').disabled = !s.some((i) => i.doc.category === 'maintenance');
 }
 
 function initStudio() {
   const f = $('#studio-form');
+  fillStates(f.pstate);
+  f.sgstin.value = demoGstin('19', 'ABCPM1234F');
+  f.tgstin.value = demoGstin('19', 'AAACN1234K');
   f.addEventListener('input', renderStudio);
-  f.addEventListener('change', () => { $('#st-dg-wrap').hidden = !f.dg.checked; renderStudio(); });
+  f.addEventListener('change', (e) => {
+    $('#st-dg-wrap').hidden = !f.dg.checked;
+    if (e.target === f.pstate) {
+      // Keep demo GSTINs consistent with the chosen state (the first two digits are the state code).
+      for (const k of ['sgstin', 'tgstin']) { const g = validateGSTIN(f[k].value); if (g.valid) f[k].value = demoGstin(f.pstate.value, f[k].value.slice(2, 12)); }
+    }
+    renderStudio();
+  });
   $$('[data-dl]').forEach((b) => b.addEventListener('click', () => {
     try {
       const k = b.dataset.dl;
@@ -423,8 +472,8 @@ function initYearEnd() {
 
 // ---------------- GST registration checker ----------------
 let regRows = [
-  { kind: 'commercial', use: 'business', tg: 'no', rent: '1,10,000' },
-  { kind: 'residential_dwelling', use: 'residence', tg: 'no', rent: '45,000' },
+  { kind: 'commercial', use: 'business', tg: 'unregistered', rent: '1,10,000' },
+  { kind: 'residential_dwelling', use: 'residence', tg: 'unregistered', rent: '45,000' },
 ];
 function regRowHtml(r, i) {
   const L = lang();
@@ -432,7 +481,7 @@ function regRowHtml(r, i) {
   return `<div class="reg-row" data-row="${i}">
     <div class="field"><label for="rk-${i}">${esc(regText(L, 'kind'))}</label><select class="select" id="rk-${i}" data-k="kind">${o('commercial', L === 'hi' ? 'दुकान / ऑफ़िस' : 'Shop / office', r.kind)}${o('residential_dwelling', L === 'hi' ? 'घर' : 'Home', r.kind)}</select></div>
     <div class="field"><label for="ru-${i}">${esc(regText(L, 'use'))}</label><select class="select" id="ru-${i}" data-k="use"${r.kind === 'commercial' ? ' disabled' : ''}>${o('residence', L === 'hi' ? 'रहने के लिए' : 'Lives there', r.use)}${o('business', L === 'hi' ? 'कारोबार' : 'Business', r.use)}</select></div>
-    <div class="field"><label for="rt-${i}">${esc(regText(L, 'tgst'))}</label><select class="select" id="rt-${i}" data-k="tg">${o('no', L === 'hi' ? 'नहीं' : 'No', r.tg)}${o('yes', L === 'hi' ? 'हाँ' : 'Yes', r.tg)}${o('comp', L === 'hi' ? 'कंपोज़िशन' : 'Composition', r.tg)}${o('unsure', L === 'hi' ? 'पक्का नहीं' : 'Not sure', r.tg)}</select></div>
+    <div class="field"><label for="rt-${i}">${esc(regText(L, 'tgst'))}</label><select class="select" id="rt-${i}" data-k="tg">${o('unregistered', L === 'hi' ? 'पंजीकृत नहीं' : 'Not registered', r.tg)}${o('regular', L === 'hi' ? 'नियमित पंजीकृत' : 'Regular registered', r.tg)}${o('composition', L === 'hi' ? 'कंपोज़िशन' : 'Composition', r.tg)}${o('unknown', L === 'hi' ? 'पक्का नहीं' : 'Not sure', r.tg)}</select></div>
     <div class="field"><label for="rr-${i}">${esc(regText(L, 'rent'))}</label><div class="prefix-input"><span>Rs.</span><input class="input" id="rr-${i}" data-k="rent" inputmode="decimal" value="${esc(r.rent)}"></div></div>
     <button class="remove" type="button" data-remove="${i}" aria-label="${esc(regText(L, 'remove'))}"${regRows.length === 1 ? ' disabled' : ''}>×</button>
   </div>`;
@@ -443,12 +492,12 @@ function renderReg() {
   let bad = false;
   const rentals = regRows.map((r) => {
     let m = 0; try { m = rupeesToPaise(r.rent || '0'); } catch { bad = true; }
-    return { kind: r.kind, use: r.kind === 'commercial' ? 'business' : r.use, tenantRegistered: r.tg === 'unsure' ? null : r.tg !== 'no', tenantComposition: r.tg === 'comp', annualPaise: m * 12, stateCode: state };
+    return { kind: r.kind, use: r.kind === 'commercial' ? 'business' : r.use, tenantStatus: r.tg, annualPaise: m * 12, stateCode: state };
   });
   let other = 0; try { other = rupeesToPaise($('#reg-other').value || '0'); } catch { bad = true; }
-  const ot = $('#reg-other-tax').value;
+  const ot = $('#reg-other-tax').value; const al = $('#reg-already').value;
   if (bad) { $('#reg-result').innerHTML = `<p class="error">${esc(t('badAmount'))}</p>`; return; }
-  const r = checkRegistration({ landlordStateCode: state, rentals, otherTurnoverPaise: other, otherTurnoverTaxable: ot === '' ? (other ? null : null) : ot === 'yes', date: TODAY });
+  const r = checkRegistration({ landlordStateCode: state, alreadyRegistered: al === '' ? null : al === 'yes', rentals, otherTurnoverPaise: other, otherTurnoverTaxable: ot === '' ? null : ot === 'yes', date: TODAY });
   $('#reg-result').innerHTML = renderRegistration(r, lang());
 }
 function initRegistration() {
@@ -462,7 +511,7 @@ function initRegistration() {
     const rm = e.target.closest('[data-remove]');
     if (rm && regRows.length > 1) { regRows.splice(Number(rm.dataset.remove), 1); renderRegRows(); renderReg(); }
   });
-  $('#reg-add').addEventListener('click', () => { regRows.push({ kind: 'commercial', use: 'business', tg: 'no', rent: '' }); renderRegRows(); $(`#rr-${regRows.length - 1}`).focus(); renderReg(); });
+  $('#reg-add').addEventListener('click', () => { regRows.push({ kind: 'commercial', use: 'business', tg: 'unregistered', rent: '' }); renderRegRows(); $(`#rr-${regRows.length - 1}`).focus(); renderReg(); });
   document.addEventListener('kk:lang', () => { renderRegRows(); renderReg(); });
 }
 

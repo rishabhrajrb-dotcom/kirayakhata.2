@@ -182,14 +182,46 @@
             <label class="choice"><input type="radio" name="tpl" value="letterhead"><span><i class="swatch" style="background:#3B1E2E"></i><span data-i18n="tpl.letterhead">Professional Letterhead</span></span></label>
           </div>
         </fieldset>
-        <div class="grid-2">
-          <div class="field"><label for="st-period" data-i18n="studio.period">Billing month</label><input class="input" id="st-period" name="period" type="month" value="2026-10" min="2024-01" max="2030-12"></div>
-          <div class="field"><label for="st-gst" data-i18n="studio.gst">Your GST status</label><select class="select" id="st-gst" name="gst"><option value="regular" data-i18n="opt.regular">Registered (regular)</option><option value="unregistered" data-i18n="opt.unregistered">Not registered</option></select></div>
-        </div>
-        <div class="field"><label for="st-rent" data-i18n="studio.rent">Monthly rent</label><div class="prefix-input"><span>Rs.</span><input class="input" id="st-rent" name="rent" inputmode="decimal" value="1,00,000"></div></div>
-        <div class="field"><label for="st-maint" data-i18n="studio.maint">Monthly maintenance</label><div class="prefix-input"><span>Rs.</span><input class="input" id="st-maint" name="maint" inputmode="decimal" value="10,000"></div><span class="hint" data-i18n="studio.mainthint">Sample uses an owner-confirmed classification (SAC 9987, 18%). Yours may differ — confirm with your CA.</span></div>
-        <label class="choice" style="margin-bottom:12px"><input type="checkbox" name="dg" id="st-dg"><span data-i18n="studio.dg">Add a separate DG / generator invoice</span></label>
-        <div class="field" id="st-dg-wrap" hidden><label for="st-dgamt" data-i18n="studio.dgamt">DG charges this month</label><div class="prefix-input"><span>Rs.</span><input class="input" id="st-dgamt" name="dgamt" inputmode="decimal" value="14,000"></div><span class="hint" data-i18n="studio.dghint">What "DG" covers decides its tax. Until you confirm it, the DG document stays "needs review".</span></div>
+        <details open><summary data-i18n="st.sup">Your details (supplier)</summary>
+          <div class="field"><label for="st-sname" data-i18n="st.sname">Legal name</label><input class="input" id="st-sname" name="sname" value="Suresh K. Mehta"></div>
+          <div class="field"><label for="st-strade" data-i18n="st.strade">Trade name (optional)</label><input class="input" id="st-strade" name="strade" value="Mehta Properties"></div>
+          <div class="field"><label for="st-saddr" data-i18n="st.saddr">Address with PIN</label><input class="input" id="st-saddr" name="saddr" value="12 Example Lane, Ballygunge, Kolkata 700019"></div>
+          <div class="grid-2">
+            <div class="field"><label for="st-gst" data-i18n="studio.gst">Your GST status</label><select class="select" id="st-gst" name="gst"><option value="regular" data-i18n="opt.regular">Registered (regular)</option><option value="unregistered" data-i18n="opt.unregistered">Not registered</option></select></div>
+            <div class="field"><label for="st-aato" data-i18n="st.aato">Turnover last year</label><select class="select" id="st-aato" name="aato"><option value="upto5cr" data-i18n="st.aato1">Up to Rs 5 crore</option><option value="above5cr" data-i18n="st.aato2">Above Rs 5 crore</option></select></div>
+          </div>
+          <div class="field" data-when="regular"><label for="st-sgstin">GSTIN</label><input class="input" id="st-sgstin" name="sgstin" maxlength="15" autocapitalize="characters"><span class="hint" data-i18n="st.gstinhint">15 characters. We check the format, state code and check digit.</span></div>
+          <div class="field"><label for="st-sign" data-i18n="st.sign">Authorised signatory</label><input class="input" id="st-sign" name="sign" value="Suresh K. Mehta"></div>
+        </details>
+        <details><summary data-i18n="st.ten">Tenant (recipient)</summary>
+          <div class="field"><label for="st-tname" data-i18n="st.tname">Tenant legal name</label><input class="input" id="st-tname" name="tname" value="Northwind Logistics Pvt Ltd"></div>
+          <div class="field"><label for="st-taddr" data-i18n="st.taddr">Billing address with PIN</label><input class="input" id="st-taddr" name="taddr" value="3rd floor, 40 Example Road, Kolkata 700029"></div>
+          <div class="grid-2">
+            <div class="field"><label for="st-tgst" data-i18n="st.tgst">Tenant GST status</label><select class="select" id="st-tgst" name="tgst"><option value="regular" data-i18n="opt.regular">Registered (regular)</option><option value="composition" data-i18n="opt.composition">Composition scheme</option><option value="unregistered" data-i18n="opt.unregistered">Not registered</option></select></div>
+            <div class="field"><label for="st-tcat" data-i18n="st.tcat">Tenant type (for TDS)</label><select class="select" id="st-tcat" name="tcat"><option value="company" data-i18n="cat.company">Company</option><option value="firm_llp" data-i18n="cat.firm">Partnership firm / LLP</option><option value="individual_huf_other" data-i18n="cat.ind">Other individual / family (HUF)</option></select></div>
+          </div>
+          <div class="field" data-when-tenant="registered"><label for="st-tgstin" data-i18n="st.tgstin">Tenant GSTIN</label><input class="input" id="st-tgstin" name="tgstin" maxlength="15" autocapitalize="characters"></div>
+          <div class="field"><label for="st-po" data-i18n="st.po">PO / reference (optional)</label><input class="input" id="st-po" name="po"></div>
+        </details>
+        <details><summary data-i18n="st.prop">Property</summary>
+          <div class="grid-2">
+            <div class="field"><label for="st-pname" data-i18n="st.pname">Property name</label><input class="input" id="st-pname" name="pname" value="Lake View Office"></div>
+            <div class="field"><label for="st-unit" data-i18n="st.unit">Unit</label><input class="input" id="st-unit" name="unit" value="Unit 2B"></div>
+          </div>
+          <div class="field"><label for="st-pkind" data-i18n="st.pkind">Property type and use</label><select class="select" id="st-pkind" name="pkind"><option value="commercial" data-i18n="opt.commercial">Shop / office / commercial</option><option value="home_res" data-i18n="st.homeres">Home — tenant lives there</option><option value="home_biz" data-i18n="st.homebiz">Home — used for business</option></select></div>
+          <div class="field"><label for="st-pstate" data-i18n="st.pstate">State where the property is (place of supply)</label><select class="select" id="st-pstate" name="pstate"></select></div>
+        </details>
+        <details open><summary data-i18n="st.inv">Invoice and charges</summary>
+          <div class="grid-2">
+            <div class="field"><label for="st-period" data-i18n="studio.period">Billing month</label><input class="input" id="st-period" name="period" type="month" value="2026-10" min="2024-01" max="2030-12"></div>
+            <div class="field"><label for="st-billday" data-i18n="st.billday">Invoice day</label><input class="input" id="st-billday" name="billday" type="number" min="1" max="31" value="1"></div>
+          </div>
+          <div class="field"><label for="st-rent" data-i18n="studio.rent">Monthly rent</label><div class="prefix-input"><span>Rs.</span><input class="input" id="st-rent" name="rent" inputmode="decimal" value="1,00,000"></div></div>
+          <div class="field"><label for="st-maint" data-i18n="studio.maint">Monthly maintenance</label><div class="prefix-input"><span>Rs.</span><input class="input" id="st-maint" name="maint" inputmode="decimal" value="10,000"></div><span class="hint" data-i18n="studio.mainthint">Sample uses an owner-confirmed classification (SAC 9987, 18%). Yours may differ — confirm with your CA.</span></div>
+          <label class="choice" style="margin-bottom:12px"><input type="checkbox" name="dg" id="st-dg"><span data-i18n="studio.dg">Add a separate DG / generator invoice</span></label>
+          <div class="field" id="st-dg-wrap" hidden><label for="st-dgamt" data-i18n="studio.dgamt">DG charges this month</label><div class="prefix-input"><span>Rs.</span><input class="input" id="st-dgamt" name="dgamt" inputmode="decimal" value="14,000"></div><span class="hint" data-i18n="studio.dghint">What "DG" covers decides its tax. Until you confirm it, the DG document stays "needs review".</span></div>
+          <div class="field"><label for="st-terms" data-i18n="st.terms">Terms printed on the invoice</label><input class="input" id="st-terms" name="terms" value="Payment within 7 days. Interest at 18% p.a. on late payment."></div>
+        </details>
         <p class="error" id="st-error" role="alert" hidden></p>
         <div class="studio-actions">
           <button class="btn btn-ink" type="button" data-dl="rent" data-i18n="studio.dlrent">Download rent PDF</button>
@@ -199,11 +231,12 @@
           <p class="small muted" data-i18n="studio.mailnote">The email draft opens in your mail app. Attach the downloaded PDFs before sending — a link cannot attach files.</p>
         </div>
       </form>
-      <div>
+      <div class="studio-right">
         <div class="previews" id="studio-previews" aria-live="polite">
           <div class="preview-wrap"><div class="cap"><span>Lease Rent</span></div><div class="sheet-stack"><div class="inv tpl-classic"><div class="watermark">DRAFT</div><p>Preview loads with JavaScript.</p></div></div></div>
         </div>
-        <div class="notice info" style="margin-top:20px" data-i18n="studio.note">Separate presentation does not by itself make rent and maintenance legally separate supplies or change their tax. Each document keeps its own number, tax summary and balance.</div>
+        <div class="checklist" id="studio-checklist" aria-live="polite"></div>
+        <div class="notice info" data-i18n="studio.note">Separate presentation does not by itself make rent and maintenance legally separate supplies or change their tax. Each document keeps its own number, tax summary and balance.</div>
       </div>
     </div>
   </div>
@@ -225,6 +258,15 @@
         <div class="demo-start" id="demo-start">
           <button class="btn btn-primary" id="btn-example" type="button"><span data-i18n="demo.example">Try a ready example</span> <span class="arrow" aria-hidden="true">→</span></button>
           <button class="btn btn-ghost" id="btn-own" type="button" data-i18n="demo.own">Enter my own details</button>
+          <h3 data-i18n="demo.pick">Or start from a common situation</h3>
+          <div class="scenario-grid">
+            <button type="button" class="scenario" data-scenario="shop"><b data-i18n="sc.shop">Shop let to a company</b><span data-i18n="sc.shopd">You are GST-registered · TDS 10%</span></button>
+            <button type="button" class="scenario" data-scenario="home"><b data-i18n="sc.home">Flat let to a family</b><span data-i18n="sc.homed">Exempt from GST · rent under Rs 50,000</span></button>
+            <button type="button" class="scenario" data-scenario="rcm"><b data-i18n="sc.rcm">Unregistered landlord, registered tenant</b><span data-i18n="sc.rcmd">Tenant pays GST (reverse charge)</span></button>
+            <button type="button" class="scenario" data-scenario="short"><b data-i18n="sc.short">Payment came in short</b><span data-i18n="sc.shortd">Find out why the bank shows less</span></button>
+          </div>
+          <h3 data-i18n="demo.need">Keep these handy</h3>
+          <ul class="need-list"><li data-i18n="need.1">The month's rent from your agreement</li><li data-i18n="need.2">Whether you and your tenant are GST-registered</li><li data-i18n="need.3">The amount that reached your bank, and any TDS the tenant mentioned</li></ul>
           <p class="small muted" data-i18n="demo.private">Your entries stay in this browser. The local server checks the numbers and keeps only anonymous counts — never names, GSTIN, PAN or bank details.</p>
         </div>
         <form id="close-form" novalidate hidden>
@@ -329,6 +371,7 @@
           <div class="field"><label for="reg-state" data-i18n="reg.state">Your state</label><select class="select" id="reg-state"></select></div>
           <div class="field"><label for="reg-fy" data-i18n="reg.fy">Financial year</label><input class="input" id="reg-fy" readonly></div>
         </div>
+        <div class="field"><label for="reg-already" data-i18n="reg.already">Do you already have a GST registration under your PAN (for any business)?</label><select class="select" id="reg-already"><option value="no" data-i18n="opt.no">No</option><option value="yes" data-i18n="opt.yes">Yes</option><option value="" data-i18n="opt.notsure">Not sure</option></select></div>
         <h3 class="h3" style="font-size:1.05rem;margin:6px 0 0" data-i18n="reg.rentals">Your rentals</h3>
         <div id="reg-rows"></div>
         <button class="btn btn-ghost btn-sm" type="button" id="reg-add" style="margin-top:12px" data-i18n="reg.add">+ Add another property</button>

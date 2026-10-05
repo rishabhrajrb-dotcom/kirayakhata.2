@@ -242,9 +242,9 @@ test('mock outbox: simulated delivery, failure, retry and no duplicate send', as
 });
 
 test('issuance blocked for unregistered issuer tax invoice / missing fields', () => {
-  const doc = { taxStatus: 'SUPPORTED', documentType: 'TAX_INVOICE', lines: [{ tax: { sac: '997212' } }], totalPaise: 100 };
-  assert.ok(issuanceBlockers(doc, { supplier: { legalName: 'x', address: 'y', gstin: 'bad' }, tenant: { legalName: 'z', billingAddress: 'w' } }).includes('SUPPLIER_GSTIN'));
-  assert.ok(issuanceBlockers({ ...doc, taxStatus: 'NEEDS_SPECIALIST_REVIEW' }, { supplier: {}, tenant: {} }).includes('TAX_NEEDS_REVIEW'));
+  const doc = { taxStatus: 'SUPPORTED', documentType: 'TAX_INVOICE', lines: [{ description: 'Rent', tax: { sac: '997212' } }], taxablePaise: 100, totalPaise: 100, taxSummary: [{}], invoiceDate: '2026-10-01', servicePeriod: { to: '2026-10-31' } };
+  assert.ok(issuanceBlockers(doc, { supplier: { legalName: 'x', address: 'y', gstin: 'bad' }, tenant: { legalName: 'z', billingAddress: 'w' }, property: { stateCode: '19' } }).includes('SUP_GSTIN'));
+  assert.ok(issuanceBlockers({ ...doc, taxStatus: 'NEEDS_SPECIALIST_REVIEW' }, { supplier: {}, tenant: {}, property: {} }).includes('TAX_RESOLVED'));
 });
 
 test('rent-free period, billing in arrears and invoice notes', () => {
@@ -260,4 +260,24 @@ test('rent-free period, billing in arrears and invoice notes', () => {
   const sep = computePeriodCharges({ agreement: ag, versions: [v], period: '2026-09' });
   assert.equal(sep.lines.rent[0].amountPaise, 0);
   assert.equal(buildDocuments({ agreement: ag, version: v, supplier: w.suppliers[0], tenant: w.tenants[0], property: w.properties[0], period: '2026-09', charges: sep }).length, 0, 'fully rent-free month creates no zero invoice');
+});
+
+import { complianceChecklist, blockersFrom } from '../shared/invoice-rules.js';
+test('Rule 46 checklist: sample tax invoice passes; key failures block', () => {
+  const w = ws(); const ag = w.agreements[0]; const v = w.versions[0];
+  const ch = computePeriodCharges({ agreement: ag, versions: [v], period: '2026-10' });
+  const [rent] = buildDocuments({ agreement: ag, version: v, supplier: w.suppliers[0], tenant: w.tenants[0], property: w.properties[0], period: '2026-10', charges: ch });
+  const snap = { supplier: w.suppliers[0], tenant: w.tenants[0], property: w.properties[0] };
+  assert.deepEqual(blockersFrom(complianceChecklist(rent, snap)), [], 'sample rent invoice is fully compliant');
+  const ids = (s) => blockersFrom(complianceChecklist(rent, s));
+  assert.ok(ids({ ...snap, supplier: { ...snap.supplier, aato: 'above5cr' } }).includes('EINVOICE'), 'e-invoicing above Rs 5 crore');
+  assert.ok(ids({ ...snap, supplier: { ...snap.supplier, aato: null } }).includes('SUP_AATO'));
+  assert.ok(ids({ ...snap, supplier: { ...snap.supplier, stateCode: '27' } }).includes('SUP_GSTIN_STATE'));
+  assert.ok(ids({ ...snap, tenant: { ...snap.tenant, gstin: '' } }).includes('REC_GSTIN'));
+  assert.ok(ids({ ...snap, tenant: { ...snap.tenant, gstStatus: 'unregistered', billingAddress: '' } }).includes('REC_UNREG_DETAILS'), 'Rule 46(e) >= Rs 50,000');
+  const small = { ...rent, taxablePaise: 40_000_00 };
+  assert.ok(!blockersFrom(complianceChecklist(small, { ...snap, tenant: { ...snap.tenant, gstStatus: 'unregistered', billingAddress: '' } })).includes('REC_UNREG_DETAILS'));
+  const rcmItem = complianceChecklist({ ...rent, reverseCharge: true, documentType: 'TAX_INVOICE_RCM' }, snap).find((i) => i.id === 'RCM_STATEMENT');
+  assert.match(rcmItem.en, /Yes/);
+  assert.ok(blockersFrom(complianceChecklist({ ...rent, lines: rent.lines.map((l) => ({ ...l, tax: { ...l.tax, sac: '99' } })) }, snap)).includes('SAC'));
 });

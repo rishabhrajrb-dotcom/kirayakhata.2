@@ -18,6 +18,9 @@ import { renderInvoiceHTML, pdfBytes, invoiceFileName, invoiceLabel, downloadBlo
 import { buildYearData, ledgerCSV, summaryText, buildPackZip } from './exports.js';
 import { checkRegistration } from '/shared/registration.js';
 import { openEmailDialog, accountPanelHtml, bindAccountPanel } from './email-ui.js';
+import { createCloudRepo } from './store-cloud.js';
+import { getConfig, currentSession, requestCode, verifyCode, signOut, consumeHashSession, googleLoginUrl } from './auth.js';
+import { complianceChecklist } from '/shared/invoice-rules.js';
 import { renderRegistration } from './registration-ui.js';
 import { fyBounds, periodsBetween } from '/shared/dates.js';
 
@@ -36,10 +39,11 @@ function registrationFromWorkspace(d, overrides = {}) {
     }
     const v = versionOn(vs, TODAY()) || vs[vs.length - 1]; const t = tenantOf(d, ag);
     const prop = d.properties.find((x) => x.id === ag.propertyId);
-    rentals.push({ label: agLabel(d, ag), kind: v.terms.property?.kind, use: v.terms.property?.use, tenantRegistered: t?.gstStatus === 'unknown' ? null : ['regular', 'composition'].includes(t?.gstStatus), tenantComposition: t?.gstStatus === 'composition', annualPaise: annual, stateCode: prop?.stateCode || sup.stateCode });
+    rentals.push({ label: agLabel(d, ag), kind: v.terms.property?.kind, use: v.terms.property?.use, tenantStatus: t?.gstStatus || 'unknown', annualPaise: annual, stateCode: prop?.stateCode || sup.stateCode });
   }
   const s = d.workspace.settings || {};
-  return checkRegistration({ landlordStateCode: sup.stateCode || '19', rentals, otherTurnoverPaise: s.otherTurnoverPaise || 0, otherTurnoverTaxable: s.otherTurnoverTaxable ?? null, date: TODAY() });
+  const already = sup.gstRegType === 'regular' || sup.gstRegType === 'composition' ? true : sup.gstRegType === 'unregistered' ? false : null;
+  return checkRegistration({ landlordStateCode: sup.stateCode || '19', alreadyRegistered: already, rentals, otherTurnoverPaise: s.otherTurnoverPaise || 0, otherTurnoverTaxable: s.otherTurnoverTaxable ?? null, date: TODAY() });
 }
 function registrationPanel(d, overrides) {
   const r = registrationFromWorkspace(d, overrides);
@@ -101,8 +105,11 @@ async function openWorkspace(ws) {
   state.ws = ws;
   try { localStorage.setItem('kk:ws', ws); } catch { /* ignore */ }
   try {
-    state.repo = await createIdbRepo(DBS[ws]);
+    if (ws === 'owner' && state.cfg?.authEnabled) {
+      state.repo = await createCloudRepo({ supabaseUrl: state.cfg.supabaseUrl, anonKey: state.cfg.supabaseAnonKey, getToken: async () => (await currentSession())?.access_token });
+    } else state.repo = await createIdbRepo(DBS[ws]);
   } catch (e) {
+    if (e.code === 'SIGNED_OUT') { renderLogin(); return false; }
     $('#view').innerHTML = `<div class="panel"><h1>${esc(tr('appTitle'))}</h1><div class="notice review">${esc(e.message)} — this browser is blocking local storage (private window or blocked site data). The workspace cannot save anything here.</div></div>`;
     return false;
   }
@@ -118,10 +125,12 @@ function renderChrome() {
   document.documentElement.lang = L();
   $('#lang-btn').textContent = tr('langBtn');
   $('#ws-label').textContent = tr('wsSwitch');
-  $('#ws-select').innerHTML = opt('sample', tr('wsSample'), state.ws) + opt('owner', tr('wsOwner'), state.ws);
+  $('#ws-select').innerHTML = opt('owner', state.cfg?.authEnabled ? (L() === 'hi' ? 'मेरा खाता' : 'My account') : tr('wsOwner'), state.ws) + opt('sample', tr('wsSample'), state.ws);
   const route = currentRoute().name;
   const items = [['billing', 'nav_billing'], ['properties', 'nav_properties'], ['invoices', 'nav_invoices'], ['payments', 'nav_payments'], ['calendar', 'nav_calendar'], ['outbox', 'nav_outbox'], ['yearend', 'nav_yearend'], ['settings', 'nav_settings']];
-  $('#side-nav').innerHTML = items.map(([k, label]) => `<a href="#/${k}"${route === k || (k === 'properties' && ['property', 'add', 'change'].includes(route)) || (k === 'invoices' && route === 'invoice') ? ' aria-current="page"' : ''}>${esc(tr(label))}</a>`).join('') + `<hr><a href="/">${esc(tr('nav_home'))}</a>`;
+  const acct = state.session ? `<hr><span class="small muted" style="padding:4px 14px;word-break:break-all">${esc(state.session.email || '')}</span><a href="#" data-signout>${L() === 'hi' ? 'साइन-आउट' : 'Sign out'}</a>` : '';
+  $('#side-nav').innerHTML = items.map(([k, label]) => `<a href="#/${k}"${route === k || (k === 'properties' && ['property', 'add', 'change'].includes(route)) || (k === 'invoices' && route === 'invoice') ? ' aria-current="page"' : ''}>${esc(tr(label))}</a>`).join('') + `<hr><a href="/">${esc(tr('nav_home'))}</a>` + acct;
+  $('[data-signout]')?.addEventListener('click', async (e) => { e.preventDefault(); await signOut(); location.href = '/app'; });
 }
 
 function currentRoute() {
@@ -135,8 +144,13 @@ async function render() {
   const { name, id } = currentRoute();
   const view = $('#view');
   const d = await loadAll();
-  const banner = state.ws === 'sample' ? `<div class="banner">${esc(tr('sampleBanner'))} <button class="btn btn-ink btn-sm" type="button" data-go-owner>${esc(tr('wsOwner'))}</button></div>` : `<div class="banner info">${esc(tr('storageNote'))}</div>`;
-  const views = { billing: viewBilling, properties: viewProperties, property: viewProperty, add: viewWizard, change: viewChange, invoices: viewInvoices, invoice: viewInvoice, payments: viewPayments, calendar: viewCalendar, outbox: viewOutbox, yearend: viewYearEnd, settings: viewSettings };
+  const cloud = state.repo?.kind === 'cloud';
+  const banner = state.ws === 'sample' ? `<div class="banner">${esc(tr('sampleBanner'))} <button class="btn btn-ink btn-sm" type="button" data-go-owner>${esc(cloud || state.cfg?.authEnabled ? (L() === 'hi' ? 'मेरा खाता' : 'My account') : tr('wsOwner'))}</button></div>`
+    : cloud ? `<div class="banner info">${L() === 'hi' ? `साइन-इन: <b>${esc(state.session?.email || '')}</b> · आपके रिकॉर्ड आपके खाते में सुरक्षित हैं और केवल आप देख सकते हैं।` : `Signed in as <b>${esc(state.session?.email || '')}</b> · your records are saved to your account and visible only to you.`}</div>`
+    : `<div class="banner info">${esc(tr('storageNote'))}</div>`;
+  // First run for a new owner: profile first, then the first property.
+  if (state.ws === 'owner' && !d.suppliers.length && !['welcome', 'settings'].includes(name)) { location.replace('#/welcome'); return; }
+  const views = { welcome: viewWelcome, billing: viewBilling, properties: viewProperties, property: viewProperty, add: viewWizard, change: viewChange, invoices: viewInvoices, invoice: viewInvoice, payments: viewPayments, calendar: viewCalendar, outbox: viewOutbox, yearend: viewYearEnd, settings: viewSettings };
   try {
     view.innerHTML = banner + await (views[name] || viewBilling)(d, id);
     bindCommon(view);
@@ -147,7 +161,7 @@ async function render() {
   }
 }
 function bindCommon(view) {
-  $$('[data-go-owner]', view).forEach((b) => b.addEventListener('click', async () => { await openWorkspace('owner'); location.hash = '#/properties'; render(); }));
+  $$('[data-go-owner]', view).forEach((b) => b.addEventListener('click', async () => { try { localStorage.setItem('kk:ws', 'owner'); } catch { /* ignore */ } location.href = '/app#/properties'; }));
 }
 const BINDERS = {};
 
@@ -691,6 +705,15 @@ BINDERS.change = (view, d, agId) => {
   });
 };
 
+function checklistHtml(inv) {
+  const items = complianceChecklist(inv.doc, inv.snapshot, { number: inv.number });
+  const blocks = items.filter((i) => i.level === 'block').length;
+  const hi = L() === 'hi';
+  return `<div class="checklist" style="box-shadow:none;margin:10px 0"><h3><span>${hi ? 'GST बिल जाँच-सूची' : 'GST invoice checklist'}</span>${blocks ? `<span class="chip chip-review">${blocks} ${hi ? 'बाकी' : 'to fix'}</span>` : `<span class="chip chip-ok">${hi ? 'अनुपालक' : 'Compliant'}</span>`}</h3>
+    <ul>${items.map((i) => `<li class="${i.level}"><span class="mark" aria-hidden="true">${i.ok ? '✓' : i.level === 'block' ? '!' : '•'}</span><span>${esc(hi ? i.hi : i.en)}</span><span class="rule">${esc(i.rule)}</span></li>`).join('')}</ul>
+    ${blocks ? `<p class="small muted">${hi ? 'अपना विवरण “सेटिंग” में और किरायेदार/संपत्ति का विवरण अनुबंध में ठीक करें, फिर नीचे का बटन दबाएँ।' : 'Fix your details in Settings and the tenant/property details in the agreement, then press the button below.'}</p>${inv.status === 'draft' ? `<button class="btn btn-ink btn-sm" type="button" id="recalc2">${hi ? 'मेरे नए विवरण से यह ड्राफ़्ट ताज़ा करें' : 'Refresh this draft with my latest details'}</button>` : ''}` : ''}</div>`;
+}
+
 // ---------------- Invoices ----------------
 async function viewInvoices(d) {
   const f = state.invFilter || { status: 'active' };
@@ -731,7 +754,7 @@ async function viewInvoice(d, id) {
     </div></div>
     ${inv.status === 'draft' ? `<div class="panel"><h2>${esc(tr('issue'))}</h2>
       ${inv.stale ? `<div class="notice warn">${esc(inv.staleReason || tr('stale'))}</div><button class="btn btn-ink btn-sm" type="button" id="recalc">${esc(tr('recalc'))}</button>` : ''}
-      ${blockers.length ? `<div class="notice review"><b>${esc(tr('blockers'))}</b><ul class="reasons">${blockers.map((b) => `<li>${esc(tr(`b_${b}`))}</li>`).join('')}</ul></div>` : ''}
+      ${checklistHtml(inv)}
       ${!blockers.length && !inv.stale ? `${needsRuleConfirm ? `<label class="check"><input type="checkbox" id="rules-ok"><span>${esc(tr('confirmRules'))}</span></label>` : ''}<button class="btn btn-primary btn-sm" type="button" id="issue">${esc(tr('issue'))}</button><p class="small muted">${esc(tr('issuedNote'))}</p>` : ''}</div>` : ''}
     ${inv.status === 'issued' && inv.kind !== 'credit_note' ? `<div class="panel"><p class="small muted">${esc(tr('issuedNote'))}</p><button class="btn btn-ghost btn-sm" type="button" id="cn">${esc(tr('creditNote'))}</button></div>` : ''}
     <div class="panel"><h2>${esc(tr('balance'))}</h2><dl class="kv"><dt>${esc(tr('total'))}</dt><dd>${INR(bal.payablePaise)}</dd><dt>${esc(tr('applyAmt'))}</dt><dd>${INR(bal.allocatedPaise)}</dd><dt>${esc(tr('tdsPart'))}</dt><dd>${INR(bal.reportedTdsPaise)}</dd><dt>${esc(tr('balance'))}</dt><dd><b>${INR(bal.balancePaise)}</b></dd></dl></div>
@@ -758,8 +781,9 @@ BINDERS.invoice = (view, d, id) => {
   $('#dl-group', view)?.addEventListener('click', () => downloadBlob(makeZip(group.map((i) => ({ name: invoiceFileName(i), data: pdfBytes(i) }))), `invoices-${inv.period}.zip`, 'application/zip'));
   $('#outbox-add', view).addEventListener('click', async () => { const m = mailtoFor(d, group); const rec = await queueEmail(state.repo, { invoiceIds: group.map((i) => i.id), to: m.to || '(no email saved)', subject: m.subject, body: m.body }); toast(rec.duplicate ? tr('dupOutbox') : tr('saved')); location.hash = '#/outbox'; });
   $('#recalc', view)?.addEventListener('click', async () => { await recalculateDraft(state.repo, id); toast(tr('saved')); location.hash = '#/invoices'; });
+  $('#recalc2', view)?.addEventListener('click', async () => { await recalculateDraft(state.repo, id); toast(tr('saved')); location.hash = '#/invoices'; });
   $('#issue', view)?.addEventListener('click', async () => {
-    try { const out = await issueInvoice(state.repo, id, { reviewedRuleStatuses: $('#rules-ok', view)?.checked || false }); toast(`${tr('s_issued')}: ${out.number}`); render(); } catch (e) { toast(e.blockers ? e.blockers.map((b) => tr(`b_${b}`)).join('; ') : e.message, 'error'); }
+    try { const out = await issueInvoice(state.repo, id, { reviewedRuleStatuses: $('#rules-ok', view)?.checked || false }); toast(`${tr('s_issued')}: ${out.number}`); render(); } catch (e) { toast(e.blockers ? (L() === 'hi' ? 'जाँच-सूची के लाल बिंदु ठीक करें।' : 'Fix the red items in the checklist first.') : e.message, 'error'); }
   });
   $('#cn', view)?.addEventListener('click', async () => { const cn = await createCreditNoteDraft(state.repo, id, { reason: 'Correction' }); location.hash = `#/invoice/${cn.id}`; });
 };
@@ -905,11 +929,23 @@ async function viewSettings(d) {
   return `<h1>${esc(tr('nav_settings'))}</h1>
   ${account}
   ${registrationPanel(d)}
-  <form class="panel" id="sup" novalidate><h2>${esc(tr('supplierTitle'))}</h2>
-    ${f('legalName', tr('legalName'), s.legalName, 'text', 'required')}${f('address', tr('address'), s.address, 'text', 'required')}
+  ${supplierFormHtml(d)}
+  ${dataPanelHtml()}`;
+}
+function supplierFormHtml(d, { welcome = false } = {}) {
+  const s = d.suppliers[0] || { gstRegType: 'unregistered', stateCode: '19', bank: {}, series: { prefix: 'KK', counters: {} }, resident: true, panAvailable: true };
+  const g = s.gstin ? validateGSTIN(s.gstin) : null;
+  const f = (name, label, value, type = 'text', extra = '') => `<div class="field"><label for="s-${name}">${esc(label)}</label><input class="input" id="s-${name}" name="${name}" type="${type}" value="${esc(value ?? '')}" ${extra}></div>`;
+  const ws = d.workspace.settings || {};
+  const hi = L() === 'hi';
+  return `<form class="panel" id="sup" novalidate><h2>${esc(tr('supplierTitle'))}</h2>
+    <p class="small muted">${hi ? 'यह हर बिल पर छपता है। GST बिल के लिए नाम, पूरा पता (PIN सहित), राज्य और GSTIN अनिवार्य हैं (CGST नियम 46)।' : 'Printed on every invoice. For a GST tax invoice your legal name, full address with PIN, state and GSTIN are mandatory (CGST Rule 46).'}</p>
+    <div class="grid-2">${f('legalName', tr('legalName'), s.legalName, 'text', 'required autocomplete="name"')}${f('tradeName', hi ? 'व्यापार नाम (वैकल्पिक)' : 'Trade name (optional)', s.tradeName)}</div>
+    ${f('address', hi ? 'पूरा पता, PIN सहित' : 'Full address with PIN', s.address, 'text', 'required autocomplete="street-address"')}
     <div class="grid-3"><div class="field"><label for="s-stateCode">${esc(tr('state'))}</label><select class="select" id="s-stateCode" name="stateCode">${stateOptions(s.stateCode)}</select></div>
     <div class="field"><label for="s-gst">${esc(tr('gstReg'))}</label><select class="select" id="s-gst" name="gstRegType">${['regular', 'composition', 'unregistered', 'unknown'].map((v) => opt(v, tr(v), s.gstRegType)).join('')}</select></div>
     <div class="field"><label for="s-filing">${esc(tr('filing'))}</label><select class="select" id="s-filing" name="filing">${opt('monthly', tr('monthly'), s.filing)}${opt('qrmp', tr('qrmp'), s.filing)}</select></div></div>
+    <div class="field"><label for="s-aato">${hi ? 'पिछले वित्तीय वर्ष में आपके PAN पर कुल टर्नओवर' : 'Aggregate turnover under your PAN in the previous financial year'}</label><select class="select" id="s-aato" name="aato">${opt('', hi ? 'चुनें…' : 'Choose…', s.aato || '')}${opt('upto5cr', hi ? 'Rs 5 करोड़ तक' : 'Up to Rs 5 crore', s.aato || '')}${opt('above5cr', hi ? 'Rs 5 करोड़ से अधिक (ई-इनवॉइस लागू)' : 'Above Rs 5 crore (e-invoicing applies)', s.aato || '')}</select><span class="hint">${hi ? 'ई-इनवॉइस और SAC अंकों की ज़रूरत तय करता है।' : 'Decides whether e-invoicing applies and how many SAC digits are needed.'}</span></div>
     ${f('gstin', tr('gstin'), s.gstin, 'text', 'maxlength="15" autocapitalize="characters"')}${g && !g.valid ? `<p class="error">${esc(tr('badGstin', { reason: g.reason }))}</p>` : ''}
     <div class="grid-3">${f('email', tr('email'), s.email, 'email')}${f('phone', tr('phone'), s.phone)}${f('prefix', tr('series'), s.series?.prefix || 'KK', 'text', 'maxlength="6" pattern="[A-Za-z0-9]{1,6}"')}</div>
     <div class="grid-2">${f('signatoryName', tr('signatory'), s.signatoryName)}${f('signatoryDesignation', tr('designation'), s.signatoryDesignation)}</div>
@@ -922,15 +958,21 @@ async function viewSettings(d) {
     <div class="grid-2"><div class="field"><label for="s-other">${L() === 'hi' ? 'साल की अन्य कारोबारी आय (उसी PAN पर) — पंजीकरण जाँच हेतु' : 'Other business income in the year (same PAN) — for the registration check'}</label><div class="prefix-input"><span>Rs.</span><input class="input" id="s-other" name="otherTurnover" inputmode="decimal" value="${ws.otherTurnoverPaise ? esc(formatINR(ws.otherTurnoverPaise, { symbol: '' })) : ''}"></div></div><div class="field"><label for="s-othertax">${L() === 'hi' ? 'क्या यह GST में कर-योग्य है?' : 'Is it taxable under GST?'}</label><select class="select" id="s-othertax" name="otherTax">${opt('', tr('unknown'), ws.otherTurnoverTaxable == null ? '' : 'x')}${opt('yes', L() === 'hi' ? 'हाँ' : 'Yes', ws.otherTurnoverTaxable === true ? 'yes' : '')}${opt('no', L() === 'hi' ? 'नहीं / छूट' : 'No / exempt', ws.otherTurnoverTaxable === false ? 'no' : '')}</select></div></div>
     <label class="check"><input type="checkbox" name="senior"${ws.seniorNoBusiness ? ' checked' : ''}><span>${esc(tr('senior'))}</span></label>
     <p class="error" id="s-err" role="alert" hidden></p>
-    <button class="btn btn-primary" type="button" id="sup-save">${esc(tr('save'))}</button>
-  </form>
-  <div class="panel"><h2>${esc(tr('dataTitle'))}</h2><p>${esc(tr('storageNote'))}</p>
+    <button class="btn btn-primary" type="button" id="sup-save">${welcome ? (hi ? 'सहेजें और आगे: पहली संपत्ति जोड़ें' : 'Save and continue: add your first property') : esc(tr('save'))}</button>
+  </form>`;
+}
+function dataPanelHtml() {
+  return `<div class="panel"><h2>${esc(tr('dataTitle'))}</h2><p>${esc(tr('storageNote'))}</p>
     <div class="btn-row"><button class="btn btn-ink btn-sm" type="button" id="exp">${esc(tr('exportJson'))}</button><label class="btn btn-ghost btn-sm" for="imp">${esc(tr('importJson'))}</label><input type="file" id="imp" accept="application/json,.json" class="sr-only">
     ${state.ws === 'sample' ? `<button class="btn btn-ghost btn-sm" type="button" id="reset-sample">${esc(tr('resetSample'))}</button>` : ''}<button class="btn btn-danger btn-sm" type="button" id="del">${esc(tr('deleteWs'))}</button></div>
-    <p class="small muted" style="margin-top:12px">${esc(tr('planned'))}</p></div>`;
+    <p class="small muted" style="margin-top:12px">${state.repo?.kind === 'cloud' ? (L() === 'hi' ? 'आपके रिकॉर्ड आपके खाते में सहेजे हैं; किसी भी डिवाइस पर साइन-इन करके देखें।' : 'Your records are saved to your account — sign in on any device to see them.') : esc(tr('planned'))}</p></div>`;
 }
 BINDERS.settings = (view, d) => {
   bindAccountPanel(view, () => render());
+  bindSupplierForm(view, d, () => render());
+  bindDataPanel(view, d);
+};
+function bindSupplierForm(view, d, onSaved) {
   $('#sup-save', view).addEventListener('click', async () => {
     const fd = new FormData($('#sup', view)); const err = $('#s-err', view);
     const gst = fd.get('gstRegType'); const gstin = String(fd.get('gstin') || '').toUpperCase().trim();
@@ -939,7 +981,9 @@ BINDERS.settings = (view, d) => {
     if (gstin && validateGSTIN(gstin).valid && validateGSTIN(gstin).stateCode !== fd.get('stateCode')) { err.textContent = `${tr('badGstin', { reason: 'STATE' })}`; err.hidden = false; return; }
     let adv = null; let other = 0; try { adv = paise(fd.get('advTax')); other = paise(fd.get('otherTurnover')) || 0; } catch { err.textContent = tr('badAmount'); err.hidden = false; return; }
     const old = d.suppliers[0];
-    const sup = { ...(old || {}), id: old?.id || makeId('sup'), legalName: fd.get('legalName'), address: fd.get('address'), stateCode: fd.get('stateCode'), gstRegType: gst, filing: fd.get('filing'), gstin: gst === 'unregistered' ? '' : gstin, email: fd.get('email'), phone: fd.get('phone'), signatoryName: fd.get('signatoryName'), signatoryDesignation: fd.get('signatoryDesignation'),
+    if (!String(fd.get('legalName') || '').trim() || String(fd.get('address') || '').trim().length < 10) { err.textContent = L() === 'hi' ? 'नाम और पूरा पता ज़रूरी है।' : 'Your legal name and full address are required.'; err.hidden = false; return; }
+    if (gst === 'regular' && !validateGSTIN(gstin).valid) { err.textContent = L() === 'hi' ? 'पंजीकृत हैं तो सही GSTIN लिखें।' : 'You chose “registered” — enter your valid GSTIN.'; err.hidden = false; return; }
+    const sup = { ...(old || {}), id: old?.id || makeId('sup'), legalName: String(fd.get('legalName')).trim(), tradeName: String(fd.get('tradeName') || '').trim(), aato: fd.get('aato') || null, address: String(fd.get('address')).trim(), stateCode: fd.get('stateCode'), gstRegType: gst, filing: fd.get('filing'), gstin: gst === 'unregistered' ? '' : gstin, email: fd.get('email'), phone: fd.get('phone'), signatoryName: fd.get('signatoryName'), signatoryDesignation: fd.get('signatoryDesignation'),
       bank: { holder: fd.get('holder'), bankName: fd.get('bankName'), account: fd.get('account'), ifsc: String(fd.get('ifsc') || '').toUpperCase(), branch: fd.get('branch'), upi: fd.get('upi') }, series: { prefix, counters: old?.series?.counters || {} }, resident: fd.get('resident') === 'on', panAvailable: fd.get('panAvailable') === 'on' };
     await state.repo.tx([], async (r) => {
       await r.put('suppliers', sup);
@@ -949,8 +993,10 @@ BINDERS.settings = (view, d) => {
       await r.put('workspace', { ...w, settings: { ...(w.settings || {}), noticeDays: Number(fd.get('noticeDays')) || 0, advanceTaxPaise: adv, seniorNoBusiness: fd.get('senior') === 'on', otherTurnoverPaise: other, otherTurnoverTaxable: fd.get('otherTax') === '' ? null : fd.get('otherTax') === 'yes' } });
       await r.put('audit', { id: makeId('aud'), at: new Date().toISOString(), entity: 'supplier', entityId: sup.id, action: 'updated', detail: null, actor: 'local-owner' });
     });
-    toast(tr('saved')); render();
+    toast(tr('saved')); onSaved();
   });
+}
+function bindDataPanel(view) {
   $('#exp', view).addEventListener('click', async () => downloadBlob(JSON.stringify(await state.repo.exportAll(), null, 2), `kirayakhata-${state.ws}-backup-${TODAY()}.json`, 'application/json'));
   $('#imp', view).addEventListener('change', async (e) => {
     const file = e.target.files[0]; if (!file) return;
@@ -965,21 +1011,93 @@ BINDERS.settings = (view, d) => {
   $('#del', view).addEventListener('click', async () => {
     const wsName = state.ws === 'sample' ? tr('wsSample') : tr('wsOwner');
     if (!(await confirmDlg(tr('deleteConfirm', { ws: wsName }), { danger: true, requireText: 'DELETE' }))) return;
+    if (state.repo.kind === 'cloud') { await state.repo.deleteEverything(); toast(tr('deleted')); render(); return; }
     state.repo.close(); await deleteDatabase(DBS[state.ws]); state.repo = null;
     toast(tr('deleted')); await openWorkspace(state.ws); render();
   });
+}
+
+// ---------------- Welcome (first run) ----------------
+async function localOwnerHasData() {
+  try { const r = await createIdbRepo(DBS.owner); const n = (await r.list('agreements')).length + (await r.list('suppliers')).length; const dump = n ? await r.exportAll() : null; r.close(); return dump; } catch { return null; }
+}
+async function viewWelcome(d) {
+  const hi = L() === 'hi';
+  const local = state.repo?.kind === 'cloud' ? await localOwnerHasData() : null;
+  state.localDump = local;
+  return `<h1>${hi ? 'स्वागत है! आइए आपका खाता सेट करें' : 'Welcome! Let’s set up your account'}</h1>
+  <ol class="wiz-steps"><li class="on">1. ${hi ? 'आपका विवरण' : 'Your details'}</li><li>2. ${hi ? 'पहली संपत्ति जोड़ें' : 'Add your first property'}</li><li>3. ${hi ? 'इस महीने के बिल' : 'This month’s invoices'}</li></ol>
+  ${local ? `<div class="banner info">${hi ? 'इस डिवाइस पर पहले से रिकॉर्ड हैं।' : 'This device already has records from before you signed in.'} <button class="btn btn-ink btn-sm" type="button" id="import-local">${hi ? 'इन्हें मेरे खाते में लाएँ' : 'Bring them into my account'}</button></div>` : ''}
+  ${supplierFormHtml(d, { welcome: true })}`;
+}
+BINDERS.welcome = (view, d) => {
+  bindSupplierForm(view, d, () => { location.hash = '#/add'; });
+  $('#import-local', view)?.addEventListener('click', async () => {
+    if (!state.localDump) return;
+    const n = await state.repo.importAll(state.localDump);
+    toast(L() === 'hi' ? `${n} रिकॉर्ड आपके खाते में आए।` : `${n} records moved into your account.`);
+    location.hash = '#/properties';
+  });
 };
+
+// ---------------- Login ----------------
+function renderLogin(message) {
+  const hi = L() === 'hi';
+  $('#side-nav').innerHTML = `<a href="/">${esc(tr('nav_home'))}</a>`;
+  $('#view').innerHTML = `<div class="panel" style="max-width:560px;margin:0 auto">
+    <h1>${hi ? 'साइन-इन करें' : 'Sign in to KirayaKhata'}</h1>
+    <p class="sub">${hi ? 'हर मकान-मालिक का अपना निजी खाता। आपकी संपत्तियाँ, किरायेदार और बिल केवल आपको दिखते हैं।' : 'Every landlord gets a private account. Your properties, tenants and invoices are visible only to you.'}</p>
+    ${message ? `<div class="notice warn">${esc(message)}</div>` : ''}
+    ${state.cfg?.googleLoginEnabled ? `<a class="btn btn-ink" style="width:100%" href="${esc(googleLoginUrl())}">${hi ? 'Google से जारी रखें' : 'Continue with Google'}</a><p class="small muted" style="text-align:center">${hi ? 'या ईमेल से' : 'or with email'}</p>` : ''}
+    <div class="field"><label for="li-email">${hi ? 'आपका ईमेल' : 'Your email'}</label><input class="input" id="li-email" type="email" autocomplete="email" inputmode="email"></div>
+    <button class="btn btn-primary" type="button" id="li-send" style="width:100%">${hi ? 'मुझे साइन-इन कोड / लिंक भेजें' : 'Email me a sign-in code'}</button>
+    <div id="li-code-wrap" hidden style="margin-top:16px">
+      <div class="field"><label for="li-code">${hi ? 'ईमेल में आया कोड' : 'Code from the email'}</label><input class="input" id="li-code" inputmode="numeric" autocomplete="one-time-code" maxlength="10"><span class="hint">${hi ? 'ईमेल में लिंक है तो उसे इसी ब्राउज़र में खोलें — आप अपने-आप साइन-इन हो जाएँगे।' : 'If the email has a link instead, open it in this browser — you’ll be signed in automatically.'}</span></div>
+      <button class="btn btn-ink" type="button" id="li-verify" style="width:100%">${hi ? 'सत्यापित करें' : 'Verify and continue'}</button>
+    </div>
+    <p class="small" id="li-msg" role="status"></p>
+    <hr style="border:0;border-top:1px solid var(--rule);margin:18px 0">
+    <button class="link-btn" type="button" id="li-sample">${hi ? 'बिना साइन-इन के काल्पनिक नमूना देखें' : 'Look around the fictional sample first (no sign-in)'}</button>
+  </div>`;
+  const msg = (t, bad) => { const m = $('#li-msg'); m.textContent = t; m.style.color = bad ? 'var(--ledger)' : 'var(--paid)'; };
+  $('#li-send').addEventListener('click', async () => {
+    const email = $('#li-email').value.trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { msg(hi ? 'सही ईमेल लिखें।' : 'Enter a valid email address.', true); return; }
+    try { await requestCode(email); $('#li-code-wrap').hidden = false; msg(hi ? 'ईमेल भेजा गया। इनबॉक्स (और स्पैम) देखें।' : 'Sent. Check your inbox (and spam).'); $('#li-code').focus(); } catch (e) { msg(e.message, true); }
+  });
+  $('#li-verify').addEventListener('click', async () => {
+    try { await verifyCode($('#li-email').value.trim(), $('#li-code').value.trim()); location.href = '/app'; } catch (e) { msg(e.message, true); }
+  });
+  $('#li-sample').addEventListener('click', async () => { try { localStorage.setItem('kk:ws', 'sample'); } catch { /* ignore */ } location.href = '/app'; });
+}
 
 // ---------------- start ----------------
 async function start() {
-  let ws = 'sample';
-  try { ws = localStorage.getItem('kk:ws') || 'sample'; } catch { /* ignore */ }
-  if (!(await openWorkspace(ws === 'owner' ? 'owner' : 'sample'))) return;
-  $('#ws-select').addEventListener('change', async (e) => { state.wizard = null; state.change = null; state.pay = null; state.inputs = {}; await openWorkspace(e.target.value); render(); });
-  $('#lang-btn').addEventListener('click', () => { setLang(L() === 'en' ? 'hi' : 'en'); render(); });
+  state.cfg = await getConfig();
+  consumeHashSession();
+  state.session = state.cfg.authEnabled ? await currentSession() : null;
+  let ws = state.cfg.authEnabled ? 'owner' : 'sample';
+  try { ws = localStorage.getItem('kk:ws') || ws; } catch { /* ignore */ }
+  if (ws !== 'sample') ws = 'owner';
+  $('#lang-btn').addEventListener('click', () => { setLang(L() === 'en' ? 'hi' : 'en'); if (!state.repo) renderLogin(); else render(); });
+  if (ws === 'owner' && state.cfg.authEnabled && !state.session) { renderLogin(); bindWsSelect(); return; }
+  if (!(await openWorkspace(ws))) return;
+  bindWsSelect();
   window.addEventListener('hashchange', () => { render(); $('#view').focus({ preventScroll: true }); window.scrollTo(0, 0); });
   await render();
   await runScheduler(false);
   state.schedTimer = setInterval(() => runScheduler(false).catch(() => {}), 30 * 60 * 1000);
+}
+function bindWsSelect() {
+  renderChromeSelect();
+  $('#ws-select').addEventListener('change', async (e) => {
+    state.wizard = null; state.change = null; state.pay = null; state.inputs = {};
+    try { localStorage.setItem('kk:ws', e.target.value); } catch { /* ignore */ }
+    if (e.target.value === 'owner' && state.cfg.authEnabled && !(await currentSession())) { location.href = '/app'; return; }
+    if (await openWorkspace(e.target.value)) render();
+  });
+}
+function renderChromeSelect() {
+  $('#ws-select').innerHTML = opt('owner', state.cfg?.authEnabled ? (L() === 'hi' ? 'मेरा खाता' : 'My account') : tr('wsOwner'), state.ws) + opt('sample', tr('wsSample'), state.ws);
 }
 start();

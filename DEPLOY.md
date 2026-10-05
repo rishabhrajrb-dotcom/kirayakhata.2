@@ -31,6 +31,33 @@ Your **property records stay in each user's browser** in this release. Syncing r
   - custom SMTP;
   - the Resend and Gemini keys.
 
+## Sign-in and per-user records
+
+- `/app` now asks the landlord to **sign in** before showing the workspace. Sign-in is by email code or magic link, or Google if enabled.
+- Each landlord's profile, properties, tenants, agreements, invoices and receipts live in the Supabase table `kk_records`.
+  - Row-level security limits every row to its owner. This was tested with two simulated users: no cross-reading, no cross-writing, and no inserting as another user.
+  - Saves are all-or-nothing, through `kk_apply()`.
+  - Unique indexes stop duplicate monthly invoices and duplicate invoice numbers, even across devices.
+- **First run:**
+  1. Profile: legal name, address with PIN, state, GST status and GSTIN, turnover band, bank details, signatory.
+  2. Add the first property.
+- Records saved on a device before signing in can be moved into the account in one click.
+- The fictional sample still works without signing in.
+
+**Supabase settings you must set** (Authentication → URL Configuration):
+
+- **Site URL:** `https://kirayakhata-app.vercel.app`
+- **Redirect URLs:**
+  - `https://kirayakhata-app.vercel.app/app`
+  - `https://kirayakhata-app.vercel.app/auth-callback.html`
+  - `http://localhost:4173/app`
+
+**Also:**
+
+- **SMTP:** add a custom SMTP provider under Authentication → Emails → SMTP. The built-in sender only allows a few emails per hour.
+- **Sign-in code (optional):** put `{{ .Token }}` in the Magic Link template to send a 6-digit code. The link works either way.
+- **Google login (optional):** enable the Google provider, then set `GOOGLE_LOGIN_ENABLED=1` in Vercel.
+
 ## 1. GitHub
 
 The code is pushed to `https://github.com/rishabhrajrb-dotcom/kirayakhata.2`. The repository is **public**.

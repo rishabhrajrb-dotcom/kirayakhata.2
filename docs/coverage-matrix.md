@@ -64,17 +64,44 @@ A row in this matrix is not evidence that the case is supported. The **Tests** c
 | Advance tax | Estimated tax after TDS; senior citizen without business income | Rs 10,000 threshold; 15 Jun/Sep/Dec/Mar (REQUIRES_CA_VERIFICATION) | CALC (calendar, conditional) | "advance tax only when" |
 | Annual income tax (ownership shares, municipal taxes, 30% deduction, loan interest, regime, losses) | — | — | **Not computed.** The year-end pack lists missing documents and says it is not a return | — |
 
-## GST registration check (`shared/registration.js`)
+## GST registration check (`shared/registration.js`) — conservative by design
 
-| Case | Rule applied | Outcome | Tests |
-|---|---|---|---|
-| Aggregate turnover ≤ Rs 20 lakh (Rs 10 lakh: Manipur, Mizoram, Nagaland, Tripura) | s.22 CGST Act; s.2(6) PAN-wide aggregate turnover **including exempt home rent**, excluding GST | Not required; shows room left and % used; warns at 80%+ | "GST registration check" |
-| Above limit, only exempt rent | s.23(1)(a) | Not required | same |
-| Above limit, only reverse-charge rent (tenant pays) | Notif. 05/2017-CT | Not required | same |
-| Above limit, exempt + RCM mix only | Exemptions are worded "exclusively" | REVIEW (ask a CA) | same |
-| Above limit with any rent on which landlord charges GST | s.22, s.25(1) apply within 30 days | Required, with steps | same |
-| Composition-scheme tenant on commercial rent | Excluded from RCM from 16.01.2025 → landlord's own taxable supply | Counted as forward charge | same |
-| Properties in several states | Separate registration per state | Flagged for CA | (message) |
-| Other business income under same PAN | Added to aggregate; must say taxable or exempt | ASK if unclear | (message) |
+| Case | Rule applied | Outcome |
+|---|---|---|
+| Already registered under the same PAN | Rent is taxed under the existing registration | ALREADY_REGISTERED |
+| Aggregate turnover ≤ Rs 20 lakh (Rs 10 lakh in Manipur, Mizoram, Nagaland, Tripura). Exactly 20 lakh does not "exceed". | s.22. Aggregate turnover under s.2(6) is PAN-wide and **includes** exempt home rent and rent on which tenants pay reverse charge (GST excluded). | NOT_REQUIRED. Shows room left and % used; warns at 80%+. |
+| Above the limit, and you charge GST yourself on any rent: a commercial tenant who is unregistered or under composition, a home used for business by an unregistered tenant, or other taxable income | s.22 and s.25(1): apply within 30 days. Shows the projected month the limit is crossed. | REQUIRED |
+| Above the limit, **all** rent under reverse charge (regular-registered tenants) | Notif. 05/2017-CT under s.23(2). Primary text verified: covers persons **only** making reverse-charge supplies. | **CONDITIONAL.** Lists four conditions, advises getting a CA's written view, and says registering is the safe choice. |
+| Above the limit, all rent exempt (homes let as residences to unregistered tenants) | s.23(1)(a) | CONDITIONAL, with conditions |
+| Above the limit, mix of exempt and reverse-charge rent | Neither exemption literally applies | REVIEW ("probably required") |
+| Commercial rent to a registered tenant before 10 Oct 2024 | Reverse charge was not yet in force, so this was the landlord's own taxable supply | REQUIRED |
+| Tenant registered in a different state from the property | Whether reverse charge applies is disputed | Review note |
+| Unknown tenant status, or registration status unanswered | — | NEEDS_MORE_INFORMATION |
 
-All registration values are `REQUIRES_CA_VERIFICATION` (secondary-source confirmation only).
+Tests: "GST registration check: conservative verdicts with conditions".
+
+## Tax invoice compliance (`shared/invoice-rules.js`)
+
+Each item is checked live in the studio and on every invoice. A blocking item stops issue.
+
+| Rule | Particular checked |
+|---|---|
+| Rule 46(a) | Supplier name and address (missing PIN is a warning); GSTIN valid and matching the billing state |
+| Rule 46(b) | Consecutive number, up to 16 characters, unique per financial year |
+| Rule 46(c) | Date of issue |
+| Rule 46(d) | Recipient name, address and GSTIN (registered tenant) |
+| Rule 46(e) | Unregistered recipient with value ≥ Rs 50,000: name, address, state and code |
+| Rule 46(f) | SAC on every line: at least 4 digits, or 6 digits above Rs 5 crore turnover (Notif. 78/2020) |
+| Rule 46(g) | Description of the service |
+| Rule 46(i)(j) | Taxable value and total value |
+| Rule 46(k)(l) | Table of CGST / SGST-UTGST / IGST rates and amounts |
+| Rule 46(m) | Place of supply, with state name and code |
+| Rule 46(o) | "Tax payable on reverse charge: Yes/No" |
+| Rule 46(p) | Signatory |
+| Rule 48(4) | E-invoicing: blocked above Rs 5 crore turnover, because IRN/QR can't be generated here |
+| Rule 47 / s.31(5) | Issued on time (warning only) |
+| Rule 48 | "Original for recipient" marking |
+| Rule 49 | Bill of supply for exempt rent |
+| s.31(3)(f) | Self-invoice note on reverse-charge bills from unregistered landlords |
+
+Tests: "Rule 46 checklist".
