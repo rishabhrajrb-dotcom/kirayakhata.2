@@ -13,6 +13,23 @@ The steps are done in order. **Never paste a secret key into a chat, an issue or
 
 Your **property records stay in each user's browser** in this release. Syncing records across devices is the next phase; the schema proposal is in `docs/supabase-schema.sql`.
 
+## Current status (5 Oct 2026)
+
+- Supabase project **"rishabhrajrb-Kirayakhata Project"** (`atdannhmcfggawqiewpr`, region ap-northeast-1).
+  - `supabase/setup.sql` was **applied** as the migration `kirayakhata_setup`.
+  - The rate limiter was self-tested: allowed, allowed, then blocked.
+  - Anonymous calls to it are rejected (HTTP 401).
+  - Row-level security is on for all three KirayaKhata tables.
+- The project also holds another app's tables (students, phrases, trips…). KirayaKhata does not touch them. The security advisor flags several of that app's functions; review them separately.
+- `SUPABASE_URL` = `https://atdannhmcfggawqiewpr.supabase.co`
+- `SUPABASE_ANON_KEY` = the **publishable** key, which is public by design.
+- **Still needed from you:**
+  - the **secret** key, added to Vercel and to your local `.env`;
+  - the sign-in email template with `{{ .Token }}`;
+  - the Site URL;
+  - custom SMTP;
+  - the Resend and Gemini keys.
+
 ## 1. GitHub
 
 The code is pushed to `https://github.com/rishabhrajrb-dotcom/kirayakhata.2`. The repository is **public**.
@@ -23,7 +40,7 @@ The code is pushed to `https://github.com/rishabhrajrb-dotcom/kirayakhata.2`. Th
 ## 2. Supabase (about 10 minutes)
 
 1. Go to https://supabase.com, choose **New project**, and pick the region closest to your users (for example Mumbai, `ap-south-1`). Save the database password somewhere safe.
-2. Open **SQL Editor → New query**, paste all of `supabase/setup.sql`, and click **Run**. You should see "Success".
+2. ~~Run `supabase/setup.sql`~~ — **already done** for the current project. For a new project: open **SQL Editor → New query**, paste the file and click **Run**.
 3. Open **Authentication → Sign In / Providers → Email**:
    - Email: **enabled**
    - Confirm email: **on**
@@ -38,7 +55,7 @@ The code is pushed to `https://github.com/rishabhrajrb-dotcom/kirayakhata.2`. Th
 7. Copy the API values from **Project Settings → API**:
    - Project URL → `SUPABASE_URL`
    - `anon` public key → `SUPABASE_ANON_KEY`. This key is public by design.
-   - `service_role` key → `SUPABASE_SERVICE_ROLE_KEY`. This one is **secret** and must only go into Vercel.
+   - **Secret key** (Project Settings → API Keys → *Secret keys* → `sb_secret_…`, or the legacy `service_role` key) → `SUPABASE_SERVICE_ROLE_KEY`. Both styles work. It is **secret** and goes only in Vercel and your local `.env`.
 
 ## 3. Resend, for "Email to tenant" (about 10 minutes)
 

@@ -36,6 +36,7 @@ begin
   return json_build_object('allowed', true, 'remaining', p_limit - n - 1, 'reset_at', coalesce(oldest, now()) + interval '24 hours');
 end $$;
 revoke all on function public.kk_rate_check(text, int) from public, anon, authenticated;
+grant execute on function public.kk_rate_check(text, int) to service_role;
 
 -- 3) Email audit log + idempotency (one row per user + key; a retry never sends twice)
 create table if not exists public.kk_email_log (
@@ -53,5 +54,5 @@ create table if not exists public.kk_email_log (
 );
 alter table public.kk_email_log enable row level security;
 drop policy if exists "own email log" on public.kk_email_log;
-create policy "own email log" on public.kk_email_log for select using (user_id = auth.uid());
+create policy "own email log" on public.kk_email_log for select to authenticated using (user_id = (select auth.uid()));
 -- Inserts/updates happen server-side with the service-role key only.
