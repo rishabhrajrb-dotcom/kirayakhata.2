@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KirayaKhata — My workspace</title>
+<meta name="description" content="Local workspace: properties, agreements, monthly invoices, payments, calendar and year-end records. Stored on this device.">
+<meta name="theme-color" content="#140B16">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Devanagari:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap">
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="app.css">
+<script src="js/boot.js"></script>
+<script src="vendor/jspdf.umd.min.js" defer></script>
+<script type="module" src="js/workspace.js"></script>
+</head>
+<body class="app-body">
+<a class="skip-link" href="#view">Skip to content</a>
+<header class="site-header">
+  <div class="container nav">
+    <a class="wordmark" href="/"><svg viewBox="0 0 32 32" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 5h14l4 4v18H7z"/><path d="M21 5v4h4"/><path d="M11 13h10M11 17h10M11 21h6"/></svg><span>Kiraya<em>Khata</em></span></a>
+    <div class="ws-switch"><label for="ws-select" class="sr-only" id="ws-label">Workspace</label><select id="ws-select" class="ws-select"></select></div>
+    <button id="lang-btn" class="lang-toggle" type="button">हिंदी</button>
+  </div>
+</header>
+<div class="app-shell container">
+  <nav class="side-nav" aria-label="Workspace" id="side-nav"></nav>
+  <main id="view" class="view" tabindex="-1" aria-live="polite"><p>Loading your workspace…</p><noscript>This workspace needs JavaScript. The landing page works without it.</noscript></main>
+</div>
+<div class="toast-region" id="toasts" aria-live="assertive"></div>
+<dialog id="dlg" class="dlg"></dialog>
+</body>
+</html>
