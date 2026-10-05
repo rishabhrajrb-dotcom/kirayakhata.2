@@ -21,6 +21,7 @@ Your **property records stay in each user's browser** in this release. Syncing r
   - Anonymous calls to it are rejected.
   - Row-level security is on for all KirayaKhata tables.
 - The KirayaKhata objects briefly created by mistake in another project (`atdannhmcfggawqiewpr`) were **removed**. That project's own data was not touched.
+- **Vercel:** project `kirayakhata-app` (scope rishb1) is linked to this repository, with `main` as production. It is live at **https://kirayakhata-app.vercel.app**, and every push to `main` redeploys it. The `SUPABASE_URL`, `SUPABASE_ANON_KEY` and `GEMINI_MODEL` settings are already set there.
 - `SUPABASE_URL` = `https://aiqynlallthcqhvbhyby.supabase.co`
 - `SUPABASE_ANON_KEY` = `sb_publishable_ZiA79PU16vDHTcGUfnZflg_tocwfEdP`. This publishable key is public by design.
 - **Still needed from you:**
