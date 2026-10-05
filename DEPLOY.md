@@ -15,16 +15,16 @@ Your **property records stay in each user's browser** in this release. Syncing r
 
 ## Current status (5 Oct 2026)
 
-- Supabase project **"rishabhrajrb-Kirayakhata Project"** (`atdannhmcfggawqiewpr`, region ap-northeast-1).
-  - `supabase/setup.sql` was **applied** as the migration `kirayakhata_setup`.
+- The Supabase project is **`aiqynlallthcqhvbhyby`** (dashboard name "rishabhrajrb@gmail.com", region ap-northeast-1). It holds only KirayaKhata.
+- `supabase/setup.sql` was **applied** as the migration `kirayakhata_setup`.
   - The rate limiter was self-tested: allowed, allowed, then blocked.
-  - Anonymous calls to it are rejected (HTTP 401).
-  - Row-level security is on for all three KirayaKhata tables.
-- The project also holds another app's tables (students, phrases, trips…). KirayaKhata does not touch them. The security advisor flags several of that app's functions; review them separately.
-- `SUPABASE_URL` = `https://atdannhmcfggawqiewpr.supabase.co`
-- `SUPABASE_ANON_KEY` = the **publishable** key, which is public by design.
+  - Anonymous calls to it are rejected.
+  - Row-level security is on for all KirayaKhata tables.
+- The KirayaKhata objects briefly created by mistake in another project (`atdannhmcfggawqiewpr`) were **removed**. That project's own data was not touched.
+- `SUPABASE_URL` = `https://aiqynlallthcqhvbhyby.supabase.co`
+- `SUPABASE_ANON_KEY` = `sb_publishable_ZiA79PU16vDHTcGUfnZflg_tocwfEdP`. This publishable key is public by design.
 - **Still needed from you:**
-  - the **secret** key, added to Vercel and to your local `.env`;
+  - this project's **secret** key, added to Vercel and to your local `.env`;
   - the sign-in email template with `{{ .Token }}`;
   - the Site URL;
   - custom SMTP;
