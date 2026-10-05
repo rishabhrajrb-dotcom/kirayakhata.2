@@ -42,7 +42,7 @@ const CSP = [
   "style-src-attr 'unsafe-inline'",
   "font-src 'self' https://fonts.gstatic.com",
   "img-src 'self' data: blob:",
-  "connect-src 'self' https://*.supabase.co",
+  "connect-src 'self' https://*.supabase.co https://gmail.googleapis.com",
   "frame-src 'self' blob:",
   "object-src 'none'",
   "base-uri 'self'",

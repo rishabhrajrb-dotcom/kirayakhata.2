@@ -10,8 +10,10 @@ export async function handleConfig() {
   return {
     status: 200,
     json: {
-      supabaseUrl: c.configured ? c.url : null,
-      supabaseAnonKey: c.configured ? c.anonKey : null,
+      supabaseUrl: c.url && c.anonKey ? c.url : null,
+      supabaseAnonKey: c.url && c.anonKey ? c.anonKey : null,
+      // Turn on after configuring the Google provider (gmail.send scope) in Supabase.
+      gmailSendEnabled: Boolean(c.url && c.anonKey && process.env.GMAIL_SEND_ENABLED === '1'),
       authEnabled: c.configured,
       emailEnabled: c.configured && emailConfigured(),
       aiDraftEnabled: c.configured && geminiConfigured(),

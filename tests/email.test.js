@@ -90,3 +90,14 @@ test('config exposes only public values', async () => {
   assert.ok(j.includes('anon') && j.includes('x.supabase.co'));
   for (const secret of ['service-secret', 're_secret', 'g-secret']) assert.ok(!j.includes(secret), secret);
 });
+
+import { buildMime, gmailRaw, encodeHeader } from '../shared/mime.js';
+test('MIME for Gmail: attachments, Hindi subject, header-injection safe', () => {
+  const m = buildMime({ to: 'tenant@acme.in', cc: ['me@x.in'], subject: 'अक्टूबर के बिल', text: 'नमस्ते', attachments: [{ filename: 'a.pdf', base64: Buffer.from('%PDF-1').toString('base64') }] }, 'B');
+  assert.match(m, /^To: tenant@acme.in\r\nCc: me@x.in\r\nSubject: =\?UTF-8\?B\?/);
+  assert.match(m, /Content-Disposition: attachment; filename="a.pdf"/);
+  assert.ok(m.endsWith('--B--\r\n'));
+  assert.throws(() => buildMime({ to: 'x@y.in\r\nBcc: evil@z.in', subject: 's', text: 't' }));
+  assert.equal(encodeHeader('Hi\r\nBcc: x'), 'Hi Bcc: x');
+  assert.ok(!/[+/=]/.test(gmailRaw({ to: 'a@b.in', subject: 's', text: 't' }, 'B')));
+});
