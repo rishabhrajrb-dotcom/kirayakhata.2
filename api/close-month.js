@@ -30,7 +30,8 @@ export async function handleCloseMonth({ body, visitorId, store, limiter, now = 
   let explanation = deterministicExplanation(result, lang);
   let model = { used: false, reason: 'NOT_CONFIGURED' };
   model = await explainWithGemini(approvedFacts(result), lang);
-  if (model.used) explanation = { ...model.output, deterministic: explanation.summary };
+  // Gemini only rewords the summary. Next steps always come from the engine's own plain-language list.
+  if (model.used) explanation = { ...model.output, nextActions: explanation.nextActions, deterministic: explanation.summary };
 
   // Anonymised metrics only: no names, GSTIN/PAN, emails, addresses, bank data or raw notes.
   await store.appendLine('metrics', {
